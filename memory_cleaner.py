@@ -591,15 +591,32 @@ COLORS = {
 
 
 class ToolTip:
-    """鼠标悬停提示框"""
+    """鼠标悬停提示框（延迟显示，不拦截点击事件）"""
     def __init__(self, widget, text):
         self.widget = widget
         self.text = text
         self.tip_window = None
-        widget.bind("<Enter>", self.show)
-        widget.bind("<Leave>", self.hide)
+        self._after_id = None
+        widget.bind("<Enter>", self._schedule)
+        widget.bind("<Leave>", self._cancel_and_hide)
+        widget.bind("<ButtonPress>", self._cancel_and_hide)
 
-    def show(self, event=None):
+    def _schedule(self, event=None):
+        """延迟 600ms 显示，避免快速划过时频繁弹窗"""
+        self._cancel()
+        self._after_id = self.widget.after(600, self.show)
+
+    def _cancel(self):
+        if self._after_id:
+            self.widget.after_cancel(self._after_id)
+            self._after_id = None
+
+    def _cancel_and_hide(self, event=None):
+        self._cancel()
+        self.hide()
+
+    def show(self):
+        self._after_id = None
         if self.tip_window:
             return
         x = self.widget.winfo_rootx() + 20
@@ -905,6 +922,8 @@ class MemoryCleanerApp:
             cb = tk.Checkbutton(row, variable=var,
                                  bg=row_bg, activebackground=row_bg,
                                  selectcolor=COLORS["bg"],
+                                 fg=COLORS["text"], activeforeground=COLORS["text"],
+                                 highlightthickness=0,
                                  command=self._update_estimate)
             cb.pack(side="left", padx=6)
 
@@ -940,7 +959,7 @@ class MemoryCleanerApp:
                                      bg=row_bg, fg=COLORS["text_dim"])
             effect_label.pack(side="left", padx=(0, 10))
 
-            # ─── 悬停提示 ────────────────────────────────────────────
+            # ─── 悬停提示（只绑定到文字标签，不绑定到 row 和 Checkbutton）────
             cat_label = CATEGORY_CONFIG.get(p["category"], CATEGORY_CONFIG["unknown"])["label"]
             tooltip_text = (
                 f"📁 进程名: {p['name']}\n"
@@ -950,8 +969,7 @@ class MemoryCleanerApp:
                 f"⚠️ 关闭影响: {p['effect']}\n"
                 f"💾 占用内存: {p['mem_mb']:.0f} MB"
             )
-            # 给整行和各标签都绑定 tooltip
-            for widget in [row, name_label, effect_label]:
+            for widget in [name_label, effect_label]:
                 ToolTip(widget, tooltip_text)
 
         self._update_estimate()
